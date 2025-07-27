@@ -1,0 +1,2 @@
+WhoWin = None
+LastState = None
