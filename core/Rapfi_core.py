@@ -172,19 +172,60 @@ class MyModel(nn.Module):
     def __init__(self):
         super().__init__()
 
-        # Input: (B, 15, 15, 2)
+        # Input x: (B, 2, 15, 15)
         self.extractDirFeatures = ExtractDirectionalFeatures(in_channels=2, mid_channels=32, out_channels=16, kernel_size=3, padding=1)
         self.incrementalModel = IncrementalModel(in_channels=16*4)
-        # self.extractPolicy = ExtractPolicy(in_channels=32*4)
         self.extractPolicy = ExtractPolicy_2(in_channels=16*4)
 
     def forward(self, x):
-        # x: (B, 15, 15, 2)
-        x = x.permute(0, 3, 1, 2)       # (B, 2, 15, 15)
+        # x: (B, 2, 15, 15)
         x = self.extractDirFeatures(x)   # (B, 64, 15, 15)
-        x = self.incrementalModel(x)      # (B, 64, 15, 15)
+        # x = self.incrementalModel(x)      # (B, 64, 15, 15)
         x = self.extractPolicy(x)         # (B, 1, 15, 15)
         x = x.view(x.size(0), -1)         # (B, 225) — chưa softmax
 
         return x                        # logits output
 
+    def train_model(self, dataloader):
+            # target_index: (B,) — chỉ số ô đúng (0~224)
+            loss_func = nn.CrossEntropyLoss()
+            self.train()
+            optimizer = torch.optim.Adam([
+                {"params": self.extractDirFeatures.parameters(), "lr": 0.002},
+                # {"params": self.incrementalModel.parameters(), "lr": 0.002},
+                {"params": self.extractPolicy.parameters(), "lr": 0.002, "weight_decay" : 1e-4},   # phần policy nhẹ hơn
+            ])
+            
+
+            cnt_mini_batch = 0
+
+            for epoch in range(4000):
+                print(f"Epoch {epoch} processing...")
+                for data_input, target_probs in dataloader:
+
+                    optimizer.zero_grad()
+                    logits = self.forward(data_input)           # (B, 225)
+                    loss = loss_func(logits,target_probs)
+
+                    # target: (B,)
+                    if loss < 0.1:
+                        print(f"Early stop at epoch {epoch} with loss {loss.item():.4f}")
+                        torch.save(self.state_dict(), f"model_rapfi_save_best.pth")
+                        print(f"Model saved at epoch {epoch}")
+                        return
+                    loss.backward()
+                    optimizer.step()
+
+                    cnt_mini_batch += 1
+                    if cnt_mini_batch  == 10:
+                        print(f"mini-batch loss [{cnt_mini_batch}]: {loss.item():.4f}")
+
+                cnt_mini_batch = 0
+                if epoch % 1 == 0:
+                    torch.save(self.state_dict(), f"model_rapfi_save_best.pth")
+                    print(f"Model saved at epoch {epoch}")
+                
+            super().train(mode=False)
+    
+    
+    
