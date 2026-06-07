@@ -1,0 +1,9 @@
+pygame
+numpy
+torch
+keras
+scipy
+pandas
+fastapi
+pydantic
+uvicorn
